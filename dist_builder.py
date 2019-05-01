@@ -1,4 +1,4 @@
-import importlib
+import imp
 import os
 import re
 import shutil
@@ -95,7 +95,7 @@ class Builder(object):
 		orig_argv = sys.argv
 		sys.argv[1:] = args
 		try:
-			importlib.import_module('setup', self.setup_py)
+			imp.load_source('setup', self.setup_py)
 		finally:
 			sys.argv = orig_argv
 	
