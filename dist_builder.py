@@ -28,7 +28,10 @@ def load_config(args):
 	# todo command line arguments for everything in build.ini
 	# todo don't create a bundle if it's only going to be a wheel inside? maybe
 	#  this should be the default, but if the user expicitly wants a zip, then zip
-	build_ini = find_build_ini(args)
+	try:
+		build_ini = find_build_ini(args)
+	except OSError:
+		print('No build.ini found, using defaults.')
 	config = ConfigParser()
 	defaults = u'''
 		[repo]
