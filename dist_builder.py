@@ -1,3 +1,4 @@
+import ast
 import imp
 import os
 import re
@@ -10,7 +11,7 @@ try:
 	from ConfigParser import ConfigParser
 except ImportError:
 	from configparser import ConfigParser
-	
+
 
 def main(args=sys.argv[1:]):
 	config = load_config(args)
@@ -22,22 +23,25 @@ def main(args=sys.argv[1:]):
 
 
 def load_config(args):
+	# todo command line arguments for everything in build.ini
+	# todo don't create a bundle if it's only going to be a wheel inside? maybe
+	#  this should be the default, but if the user expicitly wants a zip, then zip
 	build_ini = find_build_ini(args)
 	config = ConfigParser()
 	config.read(build_ini)
-	repo_root = os.path.abspath(os.path.join(os.path.dirname(build_ini), config.get('repo', 'root')))
+	repo_root = os.path.abspath(os.path.join(os.path.dirname(build_ini),
+											 config.get('repo', 'root', fallback='.')))
 	return Config(
 		repo_root=repo_root,
 		build=BuildConfig(
-			dist_dir=config.get('build', 'dist_dir'),
-			setup_py=os.path.join(repo_root, config.get('build', 'setup_py')),
-			dist_name=config.get('build', 'dist_name'),
+			dist_dir=config.get('build', 'dist_dir', fallback='dist/'),
+			setup_py=os.path.join(repo_root, config.get('build', 'setup_py', fallback='setup.py')),
 		),
 		bundle=BundleConfig(
-			format=config.get('bundle', 'format').lower(),
-			include_source=config.getboolean('bundle', 'include_source'),
-			dirs=[f for f in config.get('bundle', 'dirs').splitlines() if f != ''],
-			files=[f for f in config.get('bundle', 'files').splitlines() if f != ''],
+			format=config.get('bundle', 'format', fallback='zip').lower(),
+			include_source=config.getboolean('bundle', 'include_source', fallback=False),
+			dirs=[f for f in config.get('bundle', 'dirs', fallback='').splitlines() if f != ''],
+			files=[f for f in config.get('bundle', 'files', fallback='').splitlines() if f != ''],
 		)
 	)
 
@@ -62,7 +66,7 @@ def bundler_factory(build_result, config):
 
 
 Config = namedtuple('Config', 'repo_root build bundle')
-BuildConfig = namedtuple('BuildConfig', 'dist_dir setup_py dist_name')
+BuildConfig = namedtuple('BuildConfig', 'dist_dir setup_py')
 BundleConfig = namedtuple('BundleConfig', 'format include_source dirs files')
 BuildResult = namedtuple('BuildResult', 'wheel source')
 
@@ -73,10 +77,10 @@ class BundleFormat:
 
 
 class Builder(object):
-	def __init__(self, dist_dir, setup_py, dist_name):
+	def __init__(self, dist_dir, setup_py):
 		self.dist_dir = dist_dir
 		self.setup_py = setup_py
-		self.dist_name = dist_name
+		self.dist_name = SetupPyParser(setup_py).get_dist_name()
 
 	def build(self):
 		underscore_dist_name = self.dist_name.replace('-', '_')
@@ -152,6 +156,33 @@ def temporarily_cd_to(directory):
 		yield
 	finally:
 		os.chdir(original_working_directory)
+
+
+class SetupPyParser(object):
+	def __init__(self, path):
+		with open(path) as f:
+			s = f.read()
+		self.ast_root = ast.parse(s, filename=os.path.basename(path))
+	
+	def get_dist_name(self):
+		call = self._locate_setup_call(self.ast_root)
+		return self._get_name_from_setup_call(call)
+	
+	@staticmethod
+	def _locate_setup_call(ast_node):
+		# todo find setup() even if it's not assigned the name "setup"
+		# todo search recursively
+		for item in ast_node.body:
+			if isinstance(item, ast.Expr) and isinstance(item.value, ast.Call):
+				if item.value.func.id == 'setup':
+					return item.value
+	
+	@staticmethod
+	def _get_name_from_setup_call(setup_call):
+		for kwarg in setup_call.keywords:
+			if kwarg.arg == 'name':
+				return kwarg.value.s
+		raise KeyError('setup() call has no kwarg called name')
 
 
 if __name__ == '__main__':
