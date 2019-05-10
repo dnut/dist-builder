@@ -70,7 +70,7 @@ def load_config(args):
 
 def find_build_ini(args):
 	if len(args) == 0:
-		return find_file('.', 'build.ini')
+		return find('.', 'build.ini')
 	elif len(args) == 1:
 		if os.path.isfile(args[0]):
 			return args[0]
@@ -111,7 +111,12 @@ class Builder(object):
 		with temporarily_cd_to(setup_py_dir):
 			self.setup('sdist', '--dist-dir=' + abs_dist_dir, 'clean', '--all')
 			self.setup('bdist_wheel', '--dist-dir=' + abs_dist_dir, 'clean', '--all')
-			shutil.rmtree(underscore_dist_name + '.egg-info')
+			try:
+				deleteme = find('.', underscore_dist_name + '.egg-info')
+			except OSError:
+				pass
+			else:
+				shutil.rmtree(deleteme)
 		return BuildResult(
 			self._find_dist(underscore_dist_name, '.whl'),
 			self._find_dist(self.dist_name, '.tar.gz'),
@@ -126,7 +131,7 @@ class Builder(object):
 			sys.argv = orig_argv
 	
 	def _find_dist(self, underscore_dist_name, extension):
-		return find_file(self.dist_dir, '{}-.*{}'.format(underscore_dist_name, extension))
+		return find(self.dist_dir, '{}-.*{}'.format(underscore_dist_name, extension))
 
 
 class Bundler(object):
@@ -161,11 +166,11 @@ class Bundler(object):
 				z.write(os.path.join(root, file))
 
 
-def find_file(direc, pattern):
+def find(direc, pattern):
 	# todo recursive, handle multiple
 	for file_ in os.listdir(direc):
 		fullpath = os.path.join(direc, file_)
-		if re.match(pattern, file_) and os.path.isfile(fullpath):
+		if re.match(pattern, file_) and os.path.exists(fullpath):
 			return fullpath
 	raise OSError('No file found matching ' + pattern)
 
