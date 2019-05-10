@@ -7,12 +7,12 @@ import sys
 import zipfile
 from collections import namedtuple
 from contextlib import contextmanager
-try:  # python 2
-	from ConfigParser import ConfigParser
-	from stringio import StringIO
-except ImportError:  # python 3
+from io import StringIO
+try:
 	from configparser import ConfigParser
-	from io import StringIO
+except ImportError:
+	from ConfigParser import ConfigParser
+	ConfigParser.read_file = ConfigParser.readfp
 
 
 def main(args=sys.argv[1:]):
@@ -42,7 +42,7 @@ def load_config(args):
 		include_source = false
 		dirs:
 		files:
-	'''
+	'''.replace('\t', '')
 	config.read_file(StringIO(defaults))
 	try:
 		build_ini = find_build_ini(args)
