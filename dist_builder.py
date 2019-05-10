@@ -7,10 +7,12 @@ import sys
 import zipfile
 from collections import namedtuple
 from contextlib import contextmanager
-try:
+try:  # python 2
 	from ConfigParser import ConfigParser
-except ImportError:
+	from stringio import StringIO
+except ImportError:  # python 3
 	from configparser import ConfigParser
+	from io import StringIO
 
 
 def main(args=sys.argv[1:]):
@@ -28,20 +30,35 @@ def load_config(args):
 	#  this should be the default, but if the user expicitly wants a zip, then zip
 	build_ini = find_build_ini(args)
 	config = ConfigParser()
+	defaults = u'''
+		[repo]
+		root = .
+		
+		[build]
+		dist_dir  = dist/
+		setup_py  = setup.py
+		
+		[bundle]
+		format =
+		include_source = false
+		dirs:
+		files:
+	'''
+	config.read_file(StringIO(defaults))
 	config.read(build_ini)
 	repo_root = os.path.abspath(os.path.join(os.path.dirname(build_ini),
-											 config.get('repo', 'root', fallback='.')))
+											 config.get('repo', 'root')))
 	return Config(
 		repo_root=repo_root,
 		build=BuildConfig(
-			dist_dir=config.get('build', 'dist_dir', fallback='dist/'),
-			setup_py=os.path.join(repo_root, config.get('build', 'setup_py', fallback='setup.py')),
+			dist_dir=config.get('build', 'dist_dir'),
+			setup_py=os.path.join(repo_root, config.get('build', 'setup_py')),
 		),
 		bundle=BundleConfig(
-			format=config.get('bundle', 'format', fallback='zip').lower(),
-			include_source=config.getboolean('bundle', 'include_source', fallback=False),
-			dirs=[f for f in config.get('bundle', 'dirs', fallback='').splitlines() if f != ''],
-			files=[f for f in config.get('bundle', 'files', fallback='').splitlines() if f != ''],
+			format=config.get('bundle', 'format').lower(),
+			include_source=config.getboolean('bundle', 'include_source'),
+			dirs=[f for f in config.get('bundle', 'dirs').splitlines() if f != ''],
+			files=[f for f in config.get('bundle', 'files').splitlines() if f != ''],
 		)
 	)
 
