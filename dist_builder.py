@@ -2,6 +2,7 @@ import ast
 import imp
 import os
 import re
+import shlex
 import shutil
 import sys
 import zipfile
@@ -27,7 +28,7 @@ def main(args=sys.argv[1:]):
 def load_config(args):
 	# todo command line arguments for everything in build.ini
 	# todo don't create a bundle if it's only going to be a wheel inside? maybe
-	#  this should be the default, but if the user expicitly wants a zip, then zip
+	# this should be the default, but if the user explicitly wants a zip, then zip
 	config = ConfigParser()
 	defaults = u'''
 		[repo]
@@ -40,6 +41,7 @@ def load_config(args):
 		[bundle]
 		format =
 		include_source = false
+		include:
 		dirs:
 		files:
 	'''.replace('\t', '')
@@ -62,10 +64,22 @@ def load_config(args):
 		bundle=BundleConfig(
 			format=config.get('bundle', 'format').lower(),
 			include_source=config.getboolean('bundle', 'include_source'),
-			dirs=[f for f in config.get('bundle', 'dirs').splitlines() if f != ''],
-			files=[f for f in config.get('bundle', 'files').splitlines() if f != ''],
+			include=parse_copy_instructions(config.get('bundle', 'include')),
+			# todo dirs and files are deprecated, remove when appropriate
+			dirs=parse_copy_instructions(config.get('bundle', 'dirs')),
+			files=parse_copy_instructions(config.get('bundle', 'files')),
 		)
 	)
+
+
+def parse_copy_instructions(config_string):
+	return [CopyInstruction(*shlex.split(f)) for f in config_string.splitlines() if f != '']
+
+
+class CopyInstruction:
+	def __init__(self, source, target=None):
+		self.source = source
+		self.target = source if target is None else target
 
 
 def find_build_ini(args):
@@ -80,16 +94,16 @@ def find_build_ini(args):
 	
 
 def bundler_factory(build_result, config):
-	files = config.files + [build_result.wheel]
+	files = config.files + [CopyInstruction(build_result.wheel)]
 	target = build_result.wheel.rstrip('.whl')
 	if config.include_source is True:
 		files.append(build_result.source)
-	return Bundler(target, config.format, config.dirs, files)
+	return Bundler(target, config.format, config.include, config.dirs, files)
 
 
 Config = namedtuple('Config', 'repo_root build bundle')
 BuildConfig = namedtuple('BuildConfig', 'dist_dir setup_py')
-BundleConfig = namedtuple('BundleConfig', 'format include_source dirs files')
+BundleConfig = namedtuple('BundleConfig', 'format include_source include dirs files')
 BuildResult = namedtuple('BuildResult', 'wheel source')
 
 
@@ -118,7 +132,7 @@ class Builder(object):
 			else:
 				shutil.rmtree(deleteme)
 		return BuildResult(
-			self._find_dist(underscore_dist_name, '.whl'),
+			self._find_dist('{}.*py{}'.format(underscore_dist_name, sys.version_info.major), '.whl'),
 			self._find_dist(self.dist_name, '.tar.gz'),
 		)
 	
@@ -135,12 +149,19 @@ class Builder(object):
 
 
 class Bundler(object):
-	def __init__(self, target, format, dirs, files):
-		# todo: handle (source, target) using arcname
+	def __init__(self, target, format, include, dirs, files):
+		# todo dirs and files are deprecated, remove when appropriate
 		self.target = target
 		self.format = format
 		self.dirs = dirs
 		self.files = files
+		for copy_instruction in include:
+			if os.path.isdir(copy_instruction.source):
+				self.dirs.append(copy_instruction)
+			elif os.path.isfile(copy_instruction.source):
+				self.files.append(copy_instruction)
+			else:
+				raise RuntimeError("{} is not a file or folder".format(copy_instruction.source))
 	
 	def bundle(self):
 		# todo add tar.gz, maybe implement formats with plugin classes
@@ -155,15 +176,18 @@ class Bundler(object):
 	def build_zip(cls, target, dirs, files):
 		with zipfile.ZipFile(target + '.zip', mode='w') as z:
 			for dir_ in dirs:
-				cls.zipdir(z, dir_)
+				cls.zipdir(z, dir_.source, dir_.target)
 			for file_ in files:
-				z.write(file_)
+				z.write(file_.source, file_.target)
 	
 	@staticmethod
-	def zipdir(z, path):
+	def zipdir(z, path, target):
 		for root, dirs, files in os.walk(path):
 			for file in files:
-				z.write(os.path.join(root, file))
+				new_root = re.sub(r'^' + path, target + '/', root)
+				local_path = os.path.join(root, file)
+				zip_path = os.path.join(new_root, file)
+				z.write(local_path, zip_path)
 
 
 def find(direc, pattern):
