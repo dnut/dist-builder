@@ -8,7 +8,7 @@ with open(os.path.join(THIS_DIR, 'README.md')) as f:
 
 setup(
 	name='dist-builder',
-	version='0.2.5',
+	version='0.3.0',
 	description='Build a wheel and source distribution and bundle with other files in a zip',
 	long_description=long_description,
 	long_description_content_type='text/markdown',
